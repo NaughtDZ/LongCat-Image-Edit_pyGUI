@@ -1,0 +1,174 @@
+import torch
+from PIL import Image, ImageTk
+from diffusers import LongCatImageEditPipeline
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import os
+
+class ImageEditGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("LongCat Image Edit GUI")
+        self.root.geometry("1200x900")  # 增大窗口默认大小，适应横向布局
+
+        # ==================== 参数区 ====================
+        params_frame = tk.LabelFrame(root, text="Parameters", padx=10, pady=10)
+        params_frame.pack(fill="x", padx=10, pady=10)
+
+        # Input image path
+        self.input_image_path = tk.StringVar(value='assets/test.png')
+        tk.Label(params_frame, text="Input Image Path:").grid(row=0, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.input_image_path, width=60).grid(row=0, column=1, padx=10, pady=5)
+        tk.Button(params_frame, text="Browse", command=self.browse_input_image).grid(row=0, column=2, padx=10, pady=5)
+
+        # Prompt
+        self.prompt = tk.StringVar(value='将猫变成狗')
+        tk.Label(params_frame, text="Prompt:").grid(row=1, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.prompt, width=60).grid(row=1, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        # Negative Prompt
+        self.negative_prompt = tk.StringVar(value='')
+        tk.Label(params_frame, text="Negative Prompt:").grid(row=2, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.negative_prompt, width=60).grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        # Guidance Scale
+        self.guidance_scale = tk.DoubleVar(value=4.5)
+        tk.Label(params_frame, text="Guidance Scale:").grid(row=3, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.guidance_scale, width=60).grid(row=3, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        # Num Inference Steps
+        self.num_inference_steps = tk.IntVar(value=50)
+        tk.Label(params_frame, text="Num Inference Steps:").grid(row=4, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.num_inference_steps, width=60).grid(row=4, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        # Num Images Per Prompt
+        self.num_images_per_prompt = tk.IntVar(value=1)
+        tk.Label(params_frame, text="Num Images Per Prompt:").grid(row=5, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.num_images_per_prompt, width=60).grid(row=5, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        # Seed
+        self.seed = tk.IntVar(value=43)
+        tk.Label(params_frame, text="Seed:").grid(row=6, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.seed, width=60).grid(row=6, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        # Start Button
+        tk.Button(params_frame, text="Start Running", command=self.run_edit, 
+                  bg='#4CAF50', fg='white', font=('Arial', 14, 'bold'), height=2).grid(
+            row=7, column=0, columnspan=3, pady=20)
+
+        # ==================== 图像显示区（横向并排） ====================
+        images_frame = tk.Frame(root)
+        images_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # 左侧：输入图像
+        left_frame = tk.LabelFrame(images_frame, text="Input Image", padx=10, pady=10)
+        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
+
+        self.input_image_label = tk.Label(left_frame, bg='gray90', relief='sunken')
+        self.input_image_label.pack(fill="both", expand=True)
+
+        # 右侧：输出图像
+        right_frame = tk.LabelFrame(images_frame, text="Output Image", padx=10, pady=10)
+        right_frame.pack(side="right", fill="both", expand=True, padx=(5, 0))
+
+        self.output_image_label = tk.Label(right_frame, bg='gray90', relief='sunken')
+        self.output_image_label.pack(fill="both", expand=True)
+
+        # 启动时尝试加载默认输入图像
+        self.try_load_input_image()
+
+    def browse_input_image(self):
+        file_path = filedialog.askopenfilename(
+            title="Select Input Image",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp *.tiff")]
+        )
+        if file_path:
+            self.input_image_path.set(file_path)
+            self.update_input_image_display(file_path)
+
+    def try_load_input_image(self):
+        default_path = self.input_image_path.get()
+        if os.path.isfile(default_path):
+            self.update_input_image_display(default_path)
+        else:
+            self.input_image_label.config(text="Default image not found\n(Use Browse or enter path manually)", compound='center')
+
+    def update_input_image_display(self, path=None):
+        if path is None:
+            path = self.input_image_path.get()
+
+        if not os.path.isfile(path):
+            self.input_image_label.config(image='', text=f"File not found:\n{path}", compound='center')
+            return
+
+        try:
+            img = Image.open(path).convert('RGB')
+            # 调整大小以适应显示区域（保持宽高比）
+            img_copy = img.copy()
+            img_copy.thumbnail((600, 600))  # 横向布局后可以显示更大
+            photo = ImageTk.PhotoImage(img_copy)
+            self.input_image_label.config(image=photo, text='')
+            self.input_image_label.image = photo
+        except Exception as e:
+            self.input_image_label.config(image='', text=f"Cannot open image:\n{e}", compound='center')
+
+    def run_edit(self):
+        input_path = self.input_image_path.get().strip()
+
+        if not os.path.isfile(input_path):
+            messagebox.showerror("Error", f"Input image not found:\n{input_path}\nPlease select a valid image file.")
+            return
+
+        try:
+            # 加载模型
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            pipe = LongCatImageEditPipeline.from_pretrained(
+                "meituan-longcat/LongCat-Image-Edit",
+                torch_dtype=torch.bfloat16
+            )
+            pipe.enable_model_cpu_offload()
+
+            img = Image.open(input_path).convert('RGB')
+
+            prompt = self.prompt.get()
+            negative_prompt = self.negative_prompt.get()
+            guidance_scale = self.guidance_scale.get()
+            num_inference_steps = self.num_inference_steps.get()
+            num_images_per_prompt = self.num_images_per_prompt.get()
+            seed = self.seed.get()
+
+            # 显示处理中提示
+            self.output_image_label.config(image='', text="Processing...\nPlease wait, this may take a while.", compound='center', fg='blue')
+            self.root.update()
+
+            generator = torch.Generator("cpu").manual_seed(seed)
+            result = pipe(
+                img,
+                prompt,
+                negative_prompt=negative_prompt,
+                guidance_scale=guidance_scale,
+                num_inference_steps=num_inference_steps,
+                num_images_per_prompt=num_images_per_prompt,
+                generator=generator
+            )
+            output_image = result.images[0]
+
+            output_path = './edit_example.png'
+            output_image.save(output_path)
+
+            # 显示输出图像
+            output_image.thumbnail((600, 600))
+            photo = ImageTk.PhotoImage(output_image)
+            self.output_image_label.config(image=photo, text='')
+            self.output_image_label.image = photo
+
+            messagebox.showinfo("Success", f"Image editing completed!\nSaved to: {os.path.abspath(output_path)}")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Processing failed:\n{str(e)}")
+            self.output_image_label.config(image='', text="Error occurred", compound='center', fg='red')
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = ImageEditGUI(root)
+    root.mainloop()
