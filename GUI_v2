@@ -1,0 +1,244 @@
+import torch
+from PIL import Image, ImageTk
+from diffusers import LongCatImageEditPipeline
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import os
+
+class ImageEditGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("LongCat Image Edit GUI")
+        self.root.geometry("1300x950")
+
+        self.original_img = None  # 保存原始未缩放图像，用于输出时放大
+
+        # ==================== 参数区 ====================
+        params_frame = tk.LabelFrame(root, text="Parameters", padx=10, pady=10)
+        params_frame.pack(fill="x", padx=10, pady=10)
+
+        # Input image path
+        self.input_image_path = tk.StringVar(value='assets/test.png')
+        tk.Label(params_frame, text="Input Image Path:").grid(row=0, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.input_image_path, width=70).grid(row=0, column=1, padx=10, pady=5)
+        tk.Button(params_frame, text="Browse", command=self.browse_input_image).grid(row=0, column=2, padx=10, pady=5)
+
+        # Prompt & Negative Prompt
+        self.prompt = tk.StringVar(value='将猫变成狗')
+        tk.Label(params_frame, text="Prompt:").grid(row=1, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.prompt, width=70).grid(row=1, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        self.negative_prompt = tk.StringVar(value='')
+        tk.Label(params_frame, text="Negative Prompt:").grid(row=2, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.negative_prompt, width=70).grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        # Guidance & Steps
+        self.guidance_scale = tk.DoubleVar(value=4.5)
+        tk.Label(params_frame, text="Guidance Scale:").grid(row=3, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.guidance_scale, width=70).grid(row=3, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        self.num_inference_steps = tk.IntVar(value=50)
+        tk.Label(params_frame, text="Num Inference Steps:").grid(row=4, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.num_inference_steps, width=70).grid(row=4, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        self.num_images_per_prompt = tk.IntVar(value=1)
+        tk.Label(params_frame, text="Num Images Per Prompt:").grid(row=5, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.num_images_per_prompt, width=70).grid(row=5, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        self.seed = tk.IntVar(value=43)
+        tk.Label(params_frame, text="Seed:").grid(row=6, column=0, padx=10, pady=5, sticky='e')
+        tk.Entry(params_frame, textvariable=self.seed, width=70).grid(row=6, column=1, columnspan=2, padx=10, pady=5, sticky='w')
+
+        # ==================== 推理分辨率控制滑块 ====================
+        tk.Label(params_frame, text="Inference Scale (%):").grid(row=7, column=0, padx=10, pady=10, sticky='e')
+        self.scale_var = tk.IntVar(value=100)
+        scale_slider = tk.Scale(params_frame, from_=25, to=200, resolution=5, orient='horizontal',
+                                variable=self.scale_var, length=400, command=self.update_resolution_label)
+        scale_slider.grid(row=7, column=1, columnspan=2, pady=10, sticky='w')
+
+        self.resolution_label = tk.Label(params_frame, text="推理分辨率: 计算中...", fg='blue', font=('Arial', 10, 'bold'))
+        self.resolution_label.grid(row=8, column=0, columnspan=3, pady=5)
+
+        # ==================== 输出分辨率控制 ====================
+        tk.Label(params_frame, text="Output Width (0=auto):").grid(row=9, column=0, padx=10, pady=5, sticky='e')
+        self.output_width = tk.IntVar(value=0)
+        tk.Entry(params_frame, textvariable=self.output_width, width=20).grid(row=9, column=1, sticky='w', padx=(0,20))
+
+        tk.Label(params_frame, text="Output Height (0=auto):").grid(row=9, column=1, padx=10, pady=5, sticky='e')
+        self.output_height = tk.IntVar(value=0)
+        tk.Entry(params_frame, textvariable=self.output_height, width=20).grid(row=9, column=2, sticky='w')
+
+        # Start Button
+        tk.Button(params_frame, text="Start Running", command=self.run_edit,
+                  bg='#4CAF50', fg='white', font=('Arial', 14, 'bold'), height=2).grid(
+            row=10, column=0, columnspan=3, pady=20)
+
+        # ==================== 图像显示区（左右并排） ====================
+        images_frame = tk.Frame(root)
+        images_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        left_frame = tk.LabelFrame(images_frame, text="Input Image", padx=10, pady=10)
+        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        self.input_image_label = tk.Label(left_frame, bg='gray90', relief='sunken')
+        self.input_image_label.pack(fill="both", expand=True)
+
+        right_frame = tk.LabelFrame(images_frame, text="Output Image", padx=10, pady=10)
+        right_frame.pack(side="right", fill="both", expand=True, padx=(5, 0))
+        self.output_image_label = tk.Label(right_frame, bg='gray90', relief='sunken')
+        self.output_image_label.pack(fill="both", expand=True)
+
+        # 启动时尝试加载
+        self.try_load_input_image()
+
+    def browse_input_image(self):
+        file_path = filedialog.askopenfilename(
+            title="Select Input Image",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp *.tiff")]
+        )
+        if file_path:
+            self.input_image_path.set(file_path)
+            self.load_and_display_input(file_path)
+
+    def try_load_input_image(self):
+        path = self.input_image_path.get()
+        if os.path.isfile(path):
+            self.load_and_display_input(path)
+        else:
+            self.input_image_label.config(text="Default image not found\n(Use Browse or enter path)", compound='center')
+
+    def load_and_display_input(self, path):
+        if not os.path.isfile(path):
+            self.input_image_label.config(image='', text=f"File not found:\n{path}", compound='center')
+            self.resolution_label.config(text="推理分辨率: -")
+            return
+
+        try:
+            self.original_img = Image.open(path).convert('RGB')
+            # 显示预览（固定大小）
+            preview = self.original_img.copy()
+            preview.thumbnail((600, 600))
+            photo = ImageTk.PhotoImage(preview)
+            self.input_image_label.config(image=photo, text='')
+            self.input_image_label.image = photo
+
+            # 触发一次分辨率计算
+            self.update_resolution_label()
+        except Exception as e:
+            self.input_image_label.config(image='', text=f"Cannot open:\n{e}", compound='center')
+
+    def update_resolution_label(self, *args):
+        if self.original_img is None:
+            self.resolution_label.config(text="推理分辨率: -")
+            return
+
+        scale = self.scale_var.get() / 100.0
+
+        # 自动安全限制：长边不超过1344，总像素不超过约1.8M
+        w, h = self.original_img.size
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        # 安全缩放逻辑
+        max_long_side = 1344
+        max_pixels = 1800000
+        if max(new_w, new_h) > max_long_side or new_w * new_h > max_pixels:
+            # 按长边优先缩放
+            ratio = min(max_long_side / max(new_w, new_h), (max_pixels / (new_w * new_h)) ** 0.5)
+            new_w = int(new_w * ratio)
+            new_h = int(new_h * ratio)
+
+        self.resolution_label.config(text=f"推理分辨率: {new_w} × {new_h}  (scale {self.scale_var.get()}%)")
+
+    def get_inference_image(self):
+        """返回经过用户缩放 + 安全限制后的图像"""
+        if self.original_img is None:
+            raise ValueError("No input image loaded")
+
+        scale = self.scale_var.get() / 100.0
+        w, h = self.original_img.size
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        max_long_side = 1344
+        max_pixels = 1800000
+        if max(new_w, new_h) > max_long_side or new_w * new_h > max_pixels:
+            ratio = min(max_long_side / max(new_w, new_h), (max_pixels / (new_w * new_h)) ** 0.5)
+            new_w = int(new_w * ratio)
+            new_h = int(new_h * ratio)
+
+        if new_w != w or new_h != h:
+            img = self.original_img.resize((new_w, new_h), Image.LANCZOS)
+        else:
+            img = self.original_img.copy()
+
+        return img
+
+    def run_edit(self):
+        input_path = self.input_image_path.get().strip()
+        if not os.path.isfile(input_path):
+            messagebox.showerror("Error", f"Input image not found:\n{input_path}")
+            return
+
+        try:
+            # 加载模型
+            pipe = LongCatImageEditPipeline.from_pretrained(
+                "meituan-longcat/LongCat-Image-Edit",
+                torch_dtype=torch.bfloat16
+            )
+            pipe.enable_model_cpu_offload()
+
+            # 获取用于推理的图像（带缩放）
+            inference_img = self.get_inference_image()
+
+            prompt = self.prompt.get()
+            negative_prompt = self.negative_prompt.get()
+            guidance_scale = self.guidance_scale.get()
+            num_inference_steps = self.num_inference_steps.get()
+            num_images_per_prompt = self.num_images_per_prompt.get()
+            seed = self.seed.get()
+
+            self.output_image_label.config(image='', text="Processing...\nThis may take 10-60 seconds", compound='center', fg='blue')
+            self.root.update()
+
+            generator = torch.Generator("cpu").manual_seed(seed)
+            result = pipe(
+                inference_img,
+                prompt,
+                negative_prompt=negative_prompt,
+                guidance_scale=guidance_scale,
+                num_inference_steps=num_inference_steps,
+                num_images_per_prompt=num_images_per_prompt,
+                generator=generator
+            )
+            output_image = result.images[0]
+
+            # ==================== 输出分辨率调整 ====================
+            target_w = self.output_width.get()
+            target_h = self.output_height.get()
+
+            if target_w > 0 or target_h > 0:
+                if target_w <= 0:
+                    target_w = int(output_image.width * (target_h / output_image.height))
+                elif target_h <= 0:
+                    target_h = int(output_image.height * (target_w / output_image.width))
+                output_image = output_image.resize((target_w, target_h), Image.LANCZOS)
+
+            # 保存并显示
+            output_path = './edit_example.png'
+            output_image.save(output_path)
+
+            output_image.thumbnail((600, 600))
+            photo = ImageTk.PhotoImage(output_image)
+            self.output_image_label.config(image=photo, text='')
+            self.output_image_label.image = photo
+
+            messagebox.showinfo("Success", f"Completed!\nSaved to: {os.path.abspath(output_path)}\nResolution: {output_image.width}×{output_image.height}")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Processing failed:\n{str(e)}")
+            self.output_image_label.config(image='', text="Error", compound='center', fg='red')
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = ImageEditGUI(root)
+    root.mainloop()
