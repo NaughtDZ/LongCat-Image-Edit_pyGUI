@@ -12,7 +12,7 @@ pyGUI for LongCatImageEdit
 
 然后把GUI.py放到venv同级目录
 
-记得补充安装 pytorch (https://pytorch.org/get-started/locally/),建议还是通过uv pip install 安装
+记得补充安装 pytorch (  https://pytorch.org/get-started/locally/  ),建议还是通过uv pip install 安装
 
 然后安装uv pip install transformer (是的，官方脚本不会自动安装)
 
