@@ -23,3 +23,4 @@ pyGUI for LongCatImageEdit
 好好享受！
 
 (有个需要GUI界大哥帮忙的事情，跑图时候UI会无响应，影响拖放窗口什么的，有大哥会修复的欢迎修复)
+<img width="1302" height="982" alt="image" src="https://github.com/user-attachments/assets/a712ec69-fb8a-4000-9125-b54e948ffa41" />
