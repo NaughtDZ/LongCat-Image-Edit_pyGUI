@@ -22,5 +22,9 @@ pyGUI for LongCatImageEdit
 
 好好享受！
 
+注意，初次运行会从huggingface下载模型，注意网络环境。同时额外提一句，建议各位把C盘的huggingface缓存换个盘存，然后mklink软链接回去，节约C盘空间！
+
+同时，跑图会读模型等等干很多事，GUI点不动不是死机了，请耐心！
+
 (有个需要GUI界大哥帮忙的事情，跑图时候UI会无响应，影响拖放窗口什么的，有大哥会修复的欢迎修复)
 <img width="1302" height="982" alt="image" src="https://github.com/user-attachments/assets/a712ec69-fb8a-4000-9125-b54e948ffa41" />
